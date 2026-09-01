@@ -12,13 +12,25 @@ export async function onRequest(context) {
    * /files/example.jpg ကို password မလိုဘဲ
    * မည်သူမဆို ကြည့်နိုင်ပါမယ်။
    */
-  if (pathname === "/files" || pathname.startsWith("/files/")) {
+    if (pathname === "/files" || pathname.startsWith("/files/")) {
+    return context.next();
+  }
+
+  /*
+   * Movie website ကနေ ပုံပို့မည့် private API endpoint ဖြစ်ပါတယ်။
+   *
+   * ဒီနေရာမှာ website login cookie မစစ်ပါ။
+   * functions/internal/upload.js ထဲမှာ
+   * IMPORT_API_KEY ဖြင့် သီးခြားစစ်ပါမယ်။
+   */
+  if (pathname === "/internal/upload") {
     return context.next();
   }
 
   /*
    * Login page
    */
+
   if (pathname === "/login") {
     if (request.method === "GET") {
       return handleLoginPage(context);
