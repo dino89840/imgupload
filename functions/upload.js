@@ -1,8 +1,15 @@
 // POST /upload
 export async function onRequestPost(context) {
-  const { MY_BUCKET, HISTORY_KV } = context.env;
+  const { MY_BUCKET, DB } = context.env;
 
   try {
+    if (!DB) {
+      return new Response(JSON.stringify({ error: "DB binding မရှိပါ" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const formData = await context.request.formData();
     const file = formData.get("file");
 
@@ -31,7 +38,7 @@ export async function onRequestPost(context) {
     const origin = new URL(context.request.url).origin;
     const publicUrl = `${origin}/files/${fileName}`;
 
-    // History KV ထဲ သိမ်းခြင်း
+    // History D1 ထဲ သိမ်းခြင်း
     const id = `${timestamp}_${uuid}`;
     const historyItem = {
       id,
@@ -40,7 +47,17 @@ export async function onRequestPost(context) {
       r2_key: fileName,
       created_at: new Date().toISOString(),
     };
-    await HISTORY_KV.put(`history:${id}`, JSON.stringify(historyItem));
+    await DB.prepare(
+      "INSERT INTO history (id, public_url, file_name, r2_key, created_at) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(
+        historyItem.id,
+        historyItem.public_url,
+        historyItem.file_name,
+        historyItem.r2_key,
+        historyItem.created_at
+      )
+      .run();
 
     return new Response(JSON.stringify({ url: publicUrl }), {
       headers: { "Content-Type": "application/json" },
