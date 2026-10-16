@@ -1,22 +1,22 @@
 // GET /history/list
 export async function onRequestGet(context) {
-  const { HISTORY_KV } = context.env;
+  const { DB } = context.env;
 
   try {
-    const list = await HISTORY_KV.list({ prefix: "history:", limit: 50 });
-    const items = [];
-
-    for (const key of list.keys) {
-      const val = await HISTORY_KV.get(key.name);
-      if (val) {
-        items.push(JSON.parse(val));
-      }
+    if (!DB) {
+      return new Response(
+        JSON.stringify({ items: [], error: "DB binding မရှိပါ" }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
-    // Newest first
-    items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const result = await DB.prepare(
+      "SELECT id, public_url, file_name, r2_key, created_at FROM history ORDER BY created_at DESC LIMIT 50"
+    ).all();
 
-    return new Response(JSON.stringify({ items }), {
+    return new Response(JSON.stringify({ items: result.results || [] }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {
