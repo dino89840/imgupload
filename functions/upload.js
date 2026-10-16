@@ -47,19 +47,41 @@ export async function onRequestPost(context) {
       r2_key: fileName,
       created_at: new Date().toISOString(),
     };
-    await DB.prepare(
-      "INSERT INTO history (id, public_url, file_name, r2_key, created_at) VALUES (?, ?, ?, ?, ?)"
-    )
-      .bind(
-        historyItem.id,
-        historyItem.public_url,
-        historyItem.file_name,
-        historyItem.r2_key,
-        historyItem.created_at
-      )
-      .run();
 
-    return new Response(JSON.stringify({ url: publicUrl }), {
+    // INSERT OR IGNORE + retry: D1 transient error ("Network connection lost"
+    // စသည်) မှာ ပထမ attempt တကယ် ဝင်သွားပြီး response ပဲ ပျက်သွားရင်
+    // retry က PK error မဖြစ်ဘဲ no-op ဖြစ်မယ်။
+    // Transient error အကုန်ပျက်ရင်လည်း ဖိုင်က R2 ထဲ ရှိနေပြီမို့
+    // URL ကို ပြန်ပေးမယ် (fail-soft) — History row ပဲ ပျောက်မယ်။
+    // Non-transient error (schema စသည်) ဆိုရင်တော့ 500 ပဲ ပြမယ်။
+    let historyError = false;
+    try {
+      await withD1Retry(() =>
+        DB.prepare(
+          "INSERT OR IGNORE INTO history (id, public_url, file_name, r2_key, created_at) VALUES (?, ?, ?, ?, ?)"
+        )
+          .bind(
+            historyItem.id,
+            historyItem.public_url,
+            historyItem.file_name,
+            historyItem.r2_key,
+            historyItem.created_at
+          )
+          .run()
+      );
+    } catch (err) {
+      if (isTransientError(err)) {
+        historyError = true;
+      } else {
+        throw err;
+      }
+    }
+
+    const body = historyError
+      ? { url: publicUrl, history_error: true }
+      : { url: publicUrl };
+
+    return new Response(JSON.stringify(body), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
@@ -75,4 +97,36 @@ function getExtension(name, type) {
   if (fromName && fromName !== name) return fromName;
   const map = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
   return map[type] || "jpg";
+}
+
+// D1 transient-error retry: Cloudflare D1 က transient error
+// ("Network connection lost" စသည်) ပေးတတ်ပြီး write query တွေကို
+// သူ့အလိုလို retry မပေးလို့ app က ကိုယ်တိုင် retry ရပါတယ်။
+const TRANSIENT_PATTERNS = [
+  "network connection lost",
+  "transient",
+  "timeout",
+  "reset",
+  "overloaded",
+  "cannot resolve d1",
+];
+const RETRY_DELAYS_MS = [100, 300, 700]; // attempts 2, 3, 4 မတိုင်ခင် စောင့်ချိန်
+
+function isTransientError(err) {
+  const message = String(err?.message || err || "").toLowerCase();
+  return TRANSIENT_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+async function withD1Retry(fn) {
+  let lastError;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (!isTransientError(err) || attempt === 3) throw err;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  throw lastError;
 }
