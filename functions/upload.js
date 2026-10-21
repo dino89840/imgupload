@@ -20,6 +20,20 @@ export async function onRequestPost(context) {
       });
     }
 
+    // Worker memory (arrayBuffer) မနိုင်အောင် 10 MB ကန့်သတ်ချက်
+    // (internal/upload နဲ့ အတူတူ)။
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+    if (file.size > MAX_FILE_SIZE) {
+      return new Response(
+        JSON.stringify({ error: "File too large (max 10 MB)" }),
+        {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     // Unique filename ဖန်တီးခြင်း (UUID ထည့်ထားလို့ ဘယ်တော့မှ မထပ်နိုင်)
     const timestamp = Date.now();
     const uuid = crypto.randomUUID();

@@ -24,6 +24,23 @@ export async function onRequestGet(
     await cache.match(cacheKey);
 
   if (cachedResponse) {
+    // Edge cache ထဲက ပုံနဲ့ ETag ကိုက်ရင် body မပို့ဘဲ 304 ပြန်မယ်။
+    const cachedEtag = cachedResponse.headers.get("ETag");
+
+    if (
+      cachedEtag &&
+      request.headers.get("If-None-Match") === cachedEtag
+    ) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: cachedEtag,
+          "Cache-Control": cachedResponse.headers.get("Cache-Control"),
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+    }
+
     return cachedResponse;
   }
 
@@ -39,7 +56,10 @@ export async function onRequestGet(
     return new Response(
       "Not Found",
       {
-        status: 404
+        status: 404,
+        headers: {
+          "Cache-Control": "no-store"
+        }
       }
     );
   }
@@ -52,7 +72,10 @@ export async function onRequestGet(
       return new Response(
         "File Not Found",
         {
-          status: 404
+          status: 404,
+          headers: {
+            "Cache-Control": "no-store"
+          }
         }
       );
     }
@@ -100,6 +123,27 @@ export async function onRequestGet(
       );
     }
 
+    headers.set(
+      "Content-Length",
+      String(object.size)
+    );
+
+    // ETag ကိုက်တဲ့ revalidation ဆိုရင် body မပို့ဘဲ 304 ပြန်မယ်
+    // (browser/edge cache က ရှိပြီးသား ပုံကို ပြန်သုံးမယ်)။
+    if (
+      object.httpEtag &&
+      request.headers.get("If-None-Match") === object.httpEtag
+    ) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: object.httpEtag,
+          "Cache-Control": headers.get("Cache-Control"),
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+    }
+
     const response =
       new Response(
         object.body,
@@ -126,7 +170,10 @@ export async function onRequestGet(
     return new Response(
       "Error retrieving file",
       {
-        status: 500
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store"
+        }
       }
     );
   }
