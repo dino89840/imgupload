@@ -28,6 +28,21 @@ export async function onRequest(context) {
   }
 
   /*
+   * Web UI hidden: the homepage returns 404. Uploads now go through
+   * the Admin APK (backend /api/admin/r2-upload), which uses POST
+   * /login + POST /upload only. /files/* stays public.
+   */
+  if (pathname === "/" || pathname === "/index.html") {
+    return new Response("Not Found", {
+      status: 404,
+      headers: {
+        "Content-Type": "text/plain; charset=UTF-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  /*
    * Login page
    */
 
